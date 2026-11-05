@@ -7,22 +7,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-type User struct {
-	Id          int    `json:"id"`
-	DisplayName string `json:"name"`
-	Description string `json:"description"`
-}
-
-type RoomUser struct {
-	User
-	Conn *websocket.Conn
-	Room *Room
-}
-
-type Room struct {
-	Users []*RoomUser
-}
-
 type MessageType int
 
 const (
@@ -61,45 +45,7 @@ func Health(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("I'm healthy!"))
 }
 
-func Hub(user *RoomUser, c *websocket.Conn) {
-	defer c.Close()
-	roommates := make([]*User, len(user.Room.Users))
-	for idx := range user.Room.Users {
-		roommates[idx] = &user.Room.Users[idx].User
-	}
-
-	message := HubMessage{
-		MsgType: MessageTypeRoomState,
-		Payload: HubMessageJoinRoom{
-			Roommates: roommates,
-			You:       &user.User,
-		},
-	}
-	err := c.WriteJSON(&message)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	for {
-		message := UserMessage{}
-		// Если когда-нибудь тут будет большой RPS: заменить на
-		// ReadMessage|WriteMessage с easyjson или аналогом :)
-		err := c.ReadJSON(&message)
-		if err != nil {
-			log.Println(err)
-			break
-		}
-		log.Println(message)
-
-		// err = c.WriteJSON(&message)
-		// if err != nil {
-		// 	log.Println(err)
-		// 	break
-		// }
-	}
-}
-
-func Signaling(roomsMap map[string]*Room) func(http.ResponseWriter, *http.Request) {
+func HandleJoin(hub *Hub) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		roomId := r.URL.Query().Get("roomId")
 		name := r.URL.Query().Get("name")
@@ -117,26 +63,15 @@ func Signaling(roomsMap map[string]*Room) func(http.ResponseWriter, *http.Reques
 			log.Println("upgrade:", err)
 		}
 
-		room, isRoomExists := roomsMap[roomId]
-
-		if isRoomExists {
-			newUser := RoomUser{Conn: c, Room: room, User: User{Id: len(room.Users) + 1, DisplayName: name}}
-			room.Users = append(room.Users, &newUser)
-			Hub(&newUser, c)
-		} else {
-			newRoom := Room{Users: make([]*RoomUser, 0, 50)}
-			newUser := RoomUser{User: User{Id: 1, DisplayName: name}, Conn: c, Room: &newRoom}
-			newRoom.Users = append(newRoom.Users, &newUser)
-			roomsMap[roomId] = &newRoom
-			Hub(&newUser, c)
-		}
 	}
 }
 
 func main() {
-	roomsMap := make(map[string]*Room)
+	hub := NewHub()
+	go hub.Run()
+
 	http.HandleFunc("/health", Health)
-	http.HandleFunc("/join", Signaling(roomsMap))
+	http.HandleFunc("/join", HandleJoin(hub))
 
 	http.ListenAndServe("0.0.0.0:8080", nil)
 }
