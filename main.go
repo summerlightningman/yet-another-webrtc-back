@@ -7,34 +7,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-type MessageType int
-
-const (
-	MessageTypeLeaveRoom MessageType = iota
-	MessageTypeJoinRoom
-	MessageTypeRoomState
-	MessageTypeText
-)
-
-type HubMessage struct {
-	MsgType MessageType `json:"type"`
-	Payload any         `json:"payload"`
-}
-
-type HubMessageRoomState struct {
-	Roommates *User `json:"roommates"`
-}
-
-type HubMessageJoinRoom struct {
-	Roommates []*User `json:"roommates"`
-	You       *User   `json:"you"`
-}
-
-type UserMessage struct {
-	MsgType MessageType `json:"type"`
-	Payload string      `json:"payload"`
-}
-
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true
@@ -58,11 +30,17 @@ func HandleJoin(hub *Hub) func(http.ResponseWriter, *http.Request) {
 			return
 		}
 
-		c, err := upgrader.Upgrade(w, r, nil)
+		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			log.Println("upgrade:", err)
+			log.Println(err)
+			return
 		}
 
+		hub.joinRoom <- UserPayload{
+			RoomId:      roomId,
+			DisplayName: name,
+			Conn:        conn,
+		}
 	}
 }
 
@@ -73,5 +51,5 @@ func main() {
 	http.HandleFunc("/health", Health)
 	http.HandleFunc("/join", HandleJoin(hub))
 
-	http.ListenAndServe("0.0.0.0:8080", nil)
+	log.Fatal(http.ListenAndServe("0.0.0.0:8080", nil))
 }

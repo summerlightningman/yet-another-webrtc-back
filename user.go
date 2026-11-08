@@ -1,31 +1,95 @@
 package main
 
-import "github.com/gorilla/websocket"
+import (
+	"log"
+	"time"
+
+	"github.com/gorilla/websocket"
+)
 
 type UserID = string
+
+type UserMessageType int
+
+const (
+	UserMessageText UserMessageType = iota + 1
+)
+
+const (
+	writeWait      = 10 * time.Second
+	sendBufferSize = 64
+)
+
+type UserMessage struct {
+	Type UserMessageType `json:"type"`
+	Text string          `json:"text"`
+}
+
+type UserMessageHubPayload struct {
+	Message   UserMessage
+	User      *User
+	Timestamp time.Time
+}
 
 type User struct {
 	Id          UserID `json:"id"`
 	DisplayName string `json:"name"`
 	hub         *Hub
 	conn        *websocket.Conn
+	Send        chan UserMessage
 }
 
 func (u *User) ReadPump() {
 	defer func() {
 		u.hub.leaveRoom <- u.Id
-		u.conn.Close()
+		_ = u.conn.Close()
 	}()
 
+	for {
+		var message UserMessage
+		err := u.conn.ReadJSON(&message)
+		if err != nil {
+			log.Println("read error:", err)
+			return
+		}
+
+		switch message.Type {
+		case UserMessageText:
+			u.hub.broadcast <- UserMessageHubPayload{
+				Message:   message,
+				User:      u,
+				Timestamp: time.Now(),
+			}
+		default:
+			log.Printf("user %s: unknown message type %v", u.Id, message.Type)
+		}
+	}
 }
 
 func (u *User) WritePump() {
+	defer u.conn.Close()
 
+	for message := range u.Send {
+		_ = u.conn.SetWriteDeadline(time.Now().Add(writeWait))
+
+		if err := u.conn.WriteJSON(message); err != nil {
+			log.Println("write error:", err)
+			return
+		}
+	}
 }
 
-func NewUser(id UserID, displayName string) *User {
-	return &User{
+func NewUser(id UserID, displayName string, hub *Hub, conn *websocket.Conn) *User {
+	user := &User{
 		Id:          id,
 		DisplayName: displayName,
+		hub:         hub,
+		conn:        conn,
+		Send:        make(chan UserMessage, sendBufferSize),
 	}
+
+	go user.ReadPump()
+	go user.WritePump()
+
+	return user
 }
