@@ -43,6 +43,7 @@ func (h *Hub) Run() {
 	for {
 		select {
 		case payload := <-h.joinRoom:
+			log.Printf("Join room RoomID=%s, DisplayName=%s, RoomID=%s\n", payload.RoomId, payload.DisplayName, payload.RoomId)
 			room, ok := h.rooms[payload.RoomId]
 			if !ok {
 				room = NewRoom(payload.RoomId)
@@ -53,8 +54,34 @@ func (h *Hub) Run() {
 				id = GenerateID(8, 8)
 			}
 			newUser := NewUser(id, payload.DisplayName, h, payload.Conn)
+			log.Printf("New User=%s DisplayName=%s\n", newUser.Id, newUser.DisplayName)
 			room.Join(newUser)
 			h.roomByUser[newUser.Id] = room
+
+			roommates := make([]Roommate, 0, len(room.Users))
+			for _, roommate := range room.Users {
+				roommates = append(roommates, Roommate{
+					Id:          roommate.Id,
+					DisplayName: roommate.DisplayName,
+				})
+			}
+
+			messages := make([]RoomMessage, 0, len(room.Messages))
+			for _, msg := range room.Messages {
+				messages = append(messages, msg)
+			}
+
+			h.trySend(newUser, UserMessage{
+				Type: Introduction,
+				Payload: UserMessagePayload{
+					Roommates: roommates,
+					Messages:  messages,
+					You: Roommate{
+						Id:          newUser.Id,
+						DisplayName: newUser.DisplayName,
+					},
+				},
+			})
 
 		case message := <-h.broadcast:
 			room, ok := h.roomByUser[message.User.Id]
@@ -63,7 +90,7 @@ func (h *Hub) Run() {
 				continue
 			}
 			switch message.Message.Type {
-			case UserMessageText:
+			case Text:
 				for _, roommate := range room.Users {
 					h.trySend(roommate, message.Message)
 				}

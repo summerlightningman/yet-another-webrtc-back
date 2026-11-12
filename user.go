@@ -12,7 +12,8 @@ type UserID = string
 type UserMessageType int
 
 const (
-	UserMessageText UserMessageType = iota + 1
+	Text UserMessageType = iota + 1
+	Introduction
 )
 
 const (
@@ -20,9 +21,21 @@ const (
 	sendBufferSize = 64
 )
 
+type UserMessagePayload struct {
+	Roommates []Roommate    `json:"roommates"`
+	Messages  []RoomMessage `json:"messages"`
+	You       Roommate      `json:"you"`
+	Text      string        `json:"text"`
+}
+
 type UserMessage struct {
-	Type UserMessageType `json:"type"`
-	Text string          `json:"text"`
+	Type    UserMessageType    `json:"type"`
+	Payload UserMessagePayload `json:"payload"`
+}
+
+type Roommate struct {
+	Id          UserID `json:"id"`
+	DisplayName string `json:"name"`
 }
 
 type UserMessageHubPayload struct {
@@ -54,7 +67,7 @@ func (u *User) ReadPump() {
 		}
 
 		switch message.Type {
-		case UserMessageText:
+		case Text:
 			u.hub.broadcast <- UserMessageHubPayload{
 				Message:   message,
 				User:      u,

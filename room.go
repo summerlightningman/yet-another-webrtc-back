@@ -3,7 +3,7 @@ package main
 type RoomID = string
 
 type RoomMessage struct {
-	Id     int
+	Id     int    `json:"id"`
 	UserID UserID `json:"userId"`
 	Text   string `json:"text"`
 }
@@ -37,6 +37,6 @@ func (r *Room) OnMessage(userId UserID, message UserMessage) {
 	r.Messages = append(r.Messages, RoomMessage{
 		Id:     messageID,
 		UserID: userId,
-		Text:   message.Text,
+		Text:   message.Payload.Text,
 	})
 }
