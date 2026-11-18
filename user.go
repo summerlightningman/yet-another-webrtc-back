@@ -14,6 +14,8 @@ type UserMessageType int
 const (
 	Text UserMessageType = iota + 1
 	Introduction
+	RoomUpdate
+	LeaveRoom
 )
 
 const (
@@ -101,6 +103,10 @@ func NewUser(id UserID, displayName string, hub *Hub, conn *websocket.Conn) *Use
 		Send:        make(chan UserMessage, sendBufferSize),
 	}
 
+	conn.SetCloseHandler(func (code int, text string) error {
+		hub.leaveRoom <- id
+		return nil
+	})
 	go user.ReadPump()
 	go user.WritePump()
 

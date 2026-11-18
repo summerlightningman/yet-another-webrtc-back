@@ -36,7 +36,7 @@ func HandleJoin(hub *Hub) func(http.ResponseWriter, *http.Request) {
 			return
 		}
 
-		log.Printf("Join Room RoomID=%s, Name=%s\n", roomId, name)
+		log.Printf("Send RoomID=%s, Name=%s to hub joinRoom\n", roomId, name)
 		hub.joinRoom <- UserPayload{
 			RoomId:      roomId,
 			DisplayName: name,
