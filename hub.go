@@ -84,11 +84,39 @@ func (h *Hub) HandleJoinRoom(payload UserPayload) {
 	})
 	log.Printf("Send to broadcast introduction to %s\n", newUser.DisplayName)
 	h.broadcast <- UserMessageHubPayload{
-		Message: UserMessage {
+		Message: UserMessage{
 			Type: RoomUpdate,
+			Payload: UserMessagePayload{
+				Text: fmt.Sprintf("Пользователь %s вошел в комнату", newUser.DisplayName),
+			},
 		},
-		User: newUser,
+		User:      newUser,
 		Timestamp: time.Now(),
+	}
+}
+func (h *Hub) HandleLeaveRoom(userID UserID) {
+	room, ok := h.roomByUser[userID]
+	if !ok {
+		return
+	}
+	user, exists := room.Users[userID]
+	room.Leave(userID)
+	h.broadcast <- UserMessageHubPayload{
+		Message: UserMessage{
+			Type: LeaveRoom,
+			Payload: UserMessagePayload{
+				Text: fmt.Sprintf("Пользователь %s покинул комнату", user.DisplayName),
+			},
+		},
+
+		Timestamp: time.Now(),
+	}
+	delete(h.roomByUser, userID)
+	if exists {
+		close(user.Send)
+	}
+	if len(room.Users) == 0 {
+		delete(h.rooms, room.Id)
 	}
 }
 
@@ -110,8 +138,13 @@ func (h *Hub) Run() {
 					h.trySend(roommate, message.Message)
 				}
 				room.OnMessage(message.User.Id, message.Message)
+			case Introduction:
+				fallthrough
+			case LeaveRoom:
+				fallthrough
 			case RoomUpdate:
-				log.Printf("Making broadcast introduction of %s\n", message.User.Id)
+				log.Printf("Making broadcast %d of %s\n", message.Message.Type, message.User.Id)
+
 				roommates := make([]Roommate, 0, len(room.Users))
 				for _, roommate := range room.Users {
 					roommates = append(roommates, Roommate{
@@ -124,33 +157,18 @@ func (h *Hub) Run() {
 					if message.User.Id == roommate.Id {
 						continue
 					}
-					log.Printf("Send introduction of %s to %s\n", message.User.Id, roommate.DisplayName)
+					log.Printf("Send roomstate of %s to %s\n", message.User.Id, roommate.DisplayName)
 					h.trySend(roommate, UserMessage{
-						Type: RoomUpdate,
+						Type: message.Message.Type,
 						Payload: UserMessagePayload{
 							Roommates: roommates,
-							Text: fmt.Sprintf("Пользователь %s вошел в чат", message.User.DisplayName),
+							Text:      message.Message.Payload.Text,
 						},
 					})
 				}
-			default:
-				log.Printf("unknown message type: %v", message.Message.Type)
 			}
-
 		case userID := <-h.leaveRoom:
-			room, ok := h.roomByUser[userID]
-			if !ok {
-				continue
-			}
-			user, exists := room.Users[userID]
-			room.Leave(userID)
-			delete(h.roomByUser, userID)
-			if exists {
-				close(user.Send)
-			}
-			if len(room.Users) == 0 {
-				delete(h.rooms, room.Id)
-			}
+			h.HandleLeaveRoom(userID)
 		}
 	}
 }
